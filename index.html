@@ -118,6 +118,8 @@
   .small-note{font-size:11.5px; color:var(--grey7); line-height:1.5; margin-top:6px;}
 
   #leaflet-map{height:380px; width:100%; border-radius:9px; border:1px solid var(--grey1);}
+  .leaflet-tooltip.team-label{background:var(--navy); color:var(--white); border:none; font-weight:700; font-size:11px; padding:3px 8px; border-radius:6px; box-shadow:0 1px 4px rgba(0,0,0,0.3);}
+  .leaflet-tooltip.team-label::before{display:none;}
 
   .role-btn-row{display:flex; flex-direction:column; gap:10px; margin-top:6px;}
   .role-btn{padding:16px; border-radius:9px; border:1px solid var(--grey1); background:var(--white); font-weight:800; font-size:15px; color:var(--navy); cursor:pointer; text-align:left;}
@@ -321,7 +323,7 @@
 
       <div class="card full-width">
         <h2>Live tracking (safety)</h2>
-        <div class="status-line">Positions update automatically from each team's phone while their Play tab is open.</div>
+        <div class="status-line">Positions update automatically from each team's phone. See them live as pins on the Locations map above — refreshes every 15s while this tab is open.</div>
         <div id="tracking-list" style="margin-top:10px;"></div>
         <div class="btn-row"><button class="btn secondary" id="tracking-refresh-btn">Refresh</button></div>
       </div>
@@ -424,7 +426,7 @@ let deviceHeading = null;
 let notifiedIds = new Set();
 let lastLocationWrite = 0;
 let adminUnlocked = false;
-let leafletMap = null, leafletMarkersLayer = null, leafletYouMarker = null;
+let leafletMap = null, leafletMarkersLayer = null, leafletYouMarker = null, teamMarkersLayer = null;
 let selectedMapId = null;
 
 // ================= HELPERS =================
@@ -1007,6 +1009,7 @@ async function renderTracking(){
   el.innerHTML = '<div class="empty">Loading…</div>';
   const teamsData = await listTeams();
   const teams = Object.values(teamsData);
+  renderTeamMarkersOnMap(teamsData);
   if(teams.length === 0){ el.innerHTML = '<div class="empty">No teams yet.</div>'; return; }
   el.innerHTML = '';
   teams.forEach(t=>{
@@ -1026,6 +1029,26 @@ async function renderTracking(){
   });
 }
 document.getElementById('tracking-refresh-btn').addEventListener('click', renderTracking);
+
+function makeTeamPinIcon(stale){
+  const color = stale ? '#8F826C' : '#CE210F';
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:20px;height:20px;border-radius:50% 50% 50% 0; transform:rotate(-45deg); background:${color}; border:2px solid white; box-shadow:0 1px 4px rgba(0,0,0,0.5);"></div>`,
+    iconSize:[20,20], iconAnchor:[10,20]
+  });
+}
+function renderTeamMarkersOnMap(teamsData){
+  ensureLeafletMap();
+  teamMarkersLayer.clearLayers();
+  Object.values(teamsData).forEach(t=>{
+    if(!t.lastLocation) return;
+    const stale = (Date.now() - t.lastLocation.ts) > 300000;
+    const marker = L.marker([t.lastLocation.lat, t.lastLocation.lng], {icon: makeTeamPinIcon(stale)});
+    marker.bindTooltip(t.name + (stale ? ' (no signal)' : ''), {permanent:true, direction:'top', className:'team-label', offset:[0,-18]});
+    marker.addTo(teamMarkersLayer);
+  });
+}
 
 document.getElementById('finalize-btn').addEventListener('click', async ()=>{
   if(!confirm('This applies end-of-event fines to every team for unvisited properties and locks the board. Continue?')) return;
@@ -1074,6 +1097,7 @@ function ensureLeafletMap(){
     attribution:'&copy; OpenStreetMap contributors'
   }).addTo(leafletMap);
   leafletMarkersLayer = L.layerGroup().addTo(leafletMap);
+  teamMarkersLayer = L.layerGroup().addTo(leafletMap);
 }
 function renderLocationsMap(){
   ensureLeafletMap();
@@ -1173,6 +1197,7 @@ checkAutoLogin();
 
 // periodic refresh while on play tab
 setInterval(()=>{ if(currentRole==='team' && currentTeam) renderStops(); }, 20000);
+setInterval(()=>{ if(currentRole==='admin' && document.getElementById('view-admin').classList.contains('active')) renderTracking(); }, 15000);
 </script>
 </body>
 </html>
